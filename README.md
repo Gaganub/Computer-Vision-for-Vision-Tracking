@@ -18,5 +18,5 @@
 - adjust thresholds for different lighting conditions(low for dark, high for bright)
 - Detailed development guide: https://medium.com/@stepanfilonov/tracking-your-eyes-with-python-3952e66194a6
 
-## Developer
-- Stepan Filonov (@stepacool) stepanfilonov@gmail.com
+## Note: 
+This repository has undergone several changes and updates, primarily focusing on training models and integrating YOLO and DeepSORT functionality. If you fork or clone this repository, you are advised to have all required frameworks and technologies installed to avoid any issues.
