@@ -1,9 +1,4 @@
-# Eye-Tracker
-Eye tracking using OpenCV, Python.
-[Youtube Video Demonstration](https://youtu.be/zDN-wwd5cfo "Eye tracking")
-
-## Overview
-A **very** accurate eye-tracking software.
+# Computer Vision for Vision Tracking
 
 ## Features
 - Cross-platform
