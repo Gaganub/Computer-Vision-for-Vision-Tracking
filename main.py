@@ -80,7 +80,7 @@ class Window(QMainWindow):
                 left_eye_frame = np.require(left_eye_frame, np.uint8, 'C')
                 self.display_image(left_eye_frame, window='left')
 
-        if self.pupilsCheckbox.isChecked():  # draws keypoints on pupils on main window
+        if self.pupilsCheckbox.isChecked():  # draws keypoints on pupils on main window 
             self.display_image(base_image)
 
     def get_keypoints(self, frame, frame_gray, threshold, previous_keypoint, previous_area):
