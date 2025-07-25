@@ -1,32 +1,42 @@
-QMainWindow{
-            background-color: rgb(33, 33, 33);
-            color: #ff9900;
-        }
+QMainWindow {
+    background-color: rgb(28, 28, 35);
+    color: #ffaa33;
+}
 
-QLabel{
-    color: white;
+QLabel {
+    color: #f0f0f0;
 }
 
 QLabel#leftEyeBox, QLabel#rightEyeBox, QLabel#baseImage {
-    border: 2px solid white;
+    border: 2px solid #e6e6e6;
+    border-radius: 4px;
 }
 
 QCheckBox {
-    spacing: 5px;
+    spacing: 8px;
+    color: #f0f0f0;
 }
 
 QPushButton {
-    background-color: rgb(99, 144, 3);
-
-    border-width: 2px;
-    border-radius: 10px;
+    background-color: rgb(76, 175, 80);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-weight: bold;
 }
 
-QPushButton:pressed{
+QPushButton:hover {
+    background-color: rgb(67, 160, 71);
+    border: 2px solid rgb(129, 199, 132);
+}
+
+QPushButton:pressed {
     border-style: inset;
-    background-color: rgb(97, 97, 97)
+    background-color: rgb(69, 90, 100);
+    color: #ffffff;
 }
 
 QAbstractButton {
-    color: rgb(175, 189, 196);
+    color: rgb(189, 189, 189);
+    font-size: 14px;
 }
