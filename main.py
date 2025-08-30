@@ -17,7 +17,7 @@ class Window(QMainWindow):
         self.face_decector, self.eye_detector, self.detector = process.init_cv()
         self.startButton.clicked.connect(self.start_webcam)
         self.stopButton.clicked.connect(self.stop_webcam)
-        self.camera_is_running = False
+        self.camera_is_running=False
         self.previous_right_keypoints = None
         self.previous_left_keypoints = None
         self.previous_right_blob_area = None
