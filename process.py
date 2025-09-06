@@ -12,7 +12,7 @@ def init_cv():
     detector_params.filterByArea = True
     detector_params.maxArea = 1500
     detector = cv2.SimpleBlobDetector_create(detector_params)
-
+ 
     return face_detector, eye_detector, detector
 
 
