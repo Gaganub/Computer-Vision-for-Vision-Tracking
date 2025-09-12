@@ -16,7 +16,7 @@ def init_cv():
     return face_detector, eye_detector, detector
 
 
-def detect_face(img, img_gray, cascade):
+def detect_face(img, img_gray, scascade):
     """
     Detects all faces, if multiple found, works with the biggest. Returns the following parameters:
     1. The face frame
