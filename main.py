@@ -1,8 +1,11 @@
 import sys
-import logging
 import cv2
+import logging
 import numpy as np
-import process  # Assuming this module contains the CV processing functions
+from typing import Optional, Dict, Any
+from numpy.typing import NDArray
+
+import process  # uses OpenCV utilities
 
 # --- PyQt5 Imports ---
 from PyQt5.QtCore import QTimer, Qt
@@ -10,297 +13,275 @@ from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QCheckBox, QSlider
 from PyQt5.uic import loadUi
 
-# --- Typing Imports ---
-from typing import Optional, Dict, Any, Tuple
-from numpy.typing import NDArray
-
 # --- Constants ---
-FPS = 30
-TIMER_INTERVAL = 1000 // FPS
-
-# Constants for dictionary keys and window identifiers
-MAIN_WINDOW_KEY = 'main'
-LEFT_EYE_KEY = 'left'
-RIGHT_EYE_KEY = 'right'
+FRAME_RATE = 30
+FRAME_INTERVAL_MS = 1000 // FRAME_RATE
+MAIN_VIEW = "main"
+LEFT_VIEW = "left"
+RIGHT_VIEW = "right"
 
 
-class EyeTrackerWindow(QMainWindow):
-    """Main application window for the Eye Tracker."""
+class EyeTrackerApp(QMainWindow):
+    """Primary application window handling camera feed and visual tracking."""
 
     def __init__(self) -> None:
-        """Initializes the main window, UI elements, and CV components."""
         super().__init__()
-        loadUi('GUImain.ui', self)
-        self._load_stylesheet()
+        loadUi("GUImain.ui", self)
+        self._apply_style()
 
-        # --- OpenCV/Camera State ---
+        # Initialize camera components
         self.capture: Optional[cv2.VideoCapture] = None
-        self.camera_is_running: bool = False
+        self.is_active: bool = False
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_frame)
+        self.timer.timeout.connect(self._update_frame)
 
-        # --- CV Detectors ---
-        # These are expected to be returned by process.init_cv()
-        self.face_detector: Optional[cv2.CascadeClassifier] = None
-        self.eye_detector: Optional[cv2.CascadeClassifier] = None
+        # Initialize OpenCV detectors
+        self.face_cascade: Optional[cv2.CascadeClassifier] = None
+        self.eye_cascade: Optional[cv2.CascadeClassifier] = None
         self.blob_detector: Optional[cv2.SimpleBlobDetector] = None
-        self._initialize_detectors()
+        self._setup_detectors()
 
-        # --- State Tracking ---
-        self.tracking_state: Dict[str, Dict[str, Any]] = {
-            LEFT_EYE_KEY: {'keypoints': None, 'area': None},
-            RIGHT_EYE_KEY: {'keypoints': None, 'area': None}
+        # Internal state
+        self.eye_data: Dict[str, Dict[str, Any]] = {
+            LEFT_VIEW: {"keypoints": None, "area": None},
+            RIGHT_VIEW: {"keypoints": None, "area": None}
         }
 
-        # --- UI Element Mapping ---
-        # Assuming these names match the .ui file
-        self.image_labels: Dict[str, QLabel] = {
-            MAIN_WINDOW_KEY: self.baseImage,
-            LEFT_EYE_KEY: self.leftEyeBox,
-            RIGHT_EYE_KEY: self.rightEyeBox
+        # Map QLabels for easy access
+        self.display_boxes: Dict[str, QLabel] = {
+            MAIN_VIEW: self.baseImage,
+            LEFT_VIEW: self.leftEyeBox,
+            RIGHT_VIEW: self.rightEyeBox
         }
 
-        self._connect_signals()
+        self._connect_ui_events()
 
-    def _initialize_detectors(self) -> None:
-        """Initializes the OpenCV detectors from the process module."""
+    # ---------------------------------------------------------
+    # Setup and Initialization
+    # ---------------------------------------------------------
+    def _setup_detectors(self) -> None:
+        """Load OpenCV classifiers and detectors."""
         try:
-            self.face_detector, self.eye_detector, self.blob_detector = process.init_cv()
-        except Exception as e:
-            logging.error(f"Failed to initialize OpenCV detectors: {e}")
-            # Optionally, disable UI elements that depend on this
+            self.face_cascade, self.eye_cascade, self.blob_detector = process.init_cv()
+        except Exception as exc:
+            logging.error(f"OpenCV detector initialization failed: {exc}")
             self.startButton.setEnabled(False)
 
-    def _load_stylesheet(self) -> None:
-        """Loads an external CSS stylesheet."""
+    def _apply_style(self) -> None:
+        """Applies external stylesheet if available."""
         try:
-            with open("style.css", "r") as f:
-                self.setStyleSheet(f.read())
+            with open("style.css", "r") as css:
+                self.setStyleSheet(css.read())
         except FileNotFoundError:
-            logging.warning("style.css not found. Continuing without custom styles.")
+            logging.warning("style.css not found, proceeding with default look.")
         except Exception as e:
-            logging.error(f"Error loading style.css: {e}")
+            logging.error(f"Error loading stylesheet: {e}")
 
-    def _connect_signals(self) -> None:
-        """Connects UI element signals (e.g., button clicks) to methods."""
-        self.startButton.clicked.connect(self.start_webcam)
-        self.stopButton.clicked.connect(self.stop_webcam)
+    def _connect_ui_events(self) -> None:
+        """Links UI button events."""
+        self.startButton.clicked.connect(self._start_camera)
+        self.stopButton.clicked.connect(self._stop_camera)
 
-    def _open_capture_device(self) -> Optional[cv2.VideoCapture]:
-        """Tries to open a video capture device, checking common APIs."""
-        # Try DirectShow first (common on Windows for better performance)
-        capture = cv2.VideoCapture(cv2.CAP_DSHOW)
-        if capture.isOpened():
-            logging.info("Opened camera using DirectShow (CAP_DSHOW).")
-            return capture
-        
-        # Fallback to default API
-        logging.warning("CAP_DSHOW failed. Trying default camera API (0).")
-        capture = cv2.VideoCapture(0)
-        if capture.isOpened():
-            logging.info("Opened camera using default API (0).")
-            return capture
+    # ---------------------------------------------------------
+    # Camera and Timer Control
+    # ---------------------------------------------------------
+    def _open_camera(self) -> Optional[cv2.VideoCapture]:
+        """Attempts to open the webcam device using various APIs."""
+        cam = cv2.VideoCapture(cv2.CAP_DSHOW)
+        if cam.isOpened():
+            logging.info("Camera initialized via CAP_DSHOW.")
+            return cam
 
-        logging.error("Could not open any video stream.")
+        logging.warning("CAP_DSHOW failed, retrying with default API...")
+        cam = cv2.VideoCapture(0)
+        if cam.isOpened():
+            logging.info("Camera opened with default backend.")
+            return cam
+
+        logging.error("Unable to access camera device.")
         return None
 
-    def start_webcam(self) -> None:
-        """Starts the webcam feed."""
-        if self.camera_is_running:
+    def _start_camera(self) -> None:
+        """Activates the webcam stream."""
+        if self.is_active:
             return
 
-        self.capture = self._open_capture_device()
+        self.capture = self._open_camera()
         if not self.capture:
-            return  # Error was already logged in the helper
-
-        self.camera_is_running = True
-        self.timer.start(TIMER_INTERVAL)
-        logging.info("Webcam started.")
-
-    def stop_webcam(self) -> None:
-        """Stops the webcam feed and clears displays."""
-        if not self.camera_is_running:
             return
 
-        self.camera_is_running = False
+        self.is_active = True
+        self.timer.start(FRAME_INTERVAL_MS)
+        logging.info("Camera stream started.")
+
+    def _stop_camera(self) -> None:
+        """Stops webcam stream and clears UI."""
+        if not self.is_active:
+            return
+
+        self.is_active = False
         self.timer.stop()
         if self.capture:
             self.capture.release()
             self.capture = None
 
-        # Clear all image labels
-        for label in self.image_labels.values():
+        for label in self.display_boxes.values():
             label.clear()
-        logging.info("Webcam stopped.")
 
-    def update_frame(self) -> None:
-        """Called by the QTimer to process a new video frame."""
-        if not self.camera_is_running or not self.capture:
+        logging.info("Camera stream stopped.")
+
+    # ---------------------------------------------------------
+    # Frame Update Logic
+    # ---------------------------------------------------------
+    def _update_frame(self) -> None:
+        """Processes the next available frame from the webcam."""
+        if not self.is_active or not self.capture:
             return
 
-        ret, base_image = self.capture.read()
+        ret, frame = self.capture.read()
         if not ret:
-            logging.warning("Failed to read frame from camera. Stopping webcam.")
-            self.stop_webcam()
+            logging.warning("Frame read failed; stopping stream.")
+            self._stop_camera()
             return
 
-        # Always display the base image
-        self._display_image(base_image, MAIN_WINDOW_KEY)
-        gray_image = cv2.cvtColor(base_image, cv2.COLOR_BGR2GRAY)
+        self._display_frame(frame, MAIN_VIEW)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # --- Face Detection ---
         try:
-            face_results = process.detect_face(base_image, gray_image, self.face_detector)
-            face_frame, face_frame_gray, l_pos, r_pos, _, _ = face_results
+            face_data = process.detect_face(frame, gray, self.face_cascade)
+            face_frame, gray_face, left_region, right_region, *_ = face_data
         except Exception as e:
-            logging.error(f"Error in face detection: {e}")
-            self._clear_eye_labels()
+            logging.error(f"Face detection error: {e}")
+            self._clear_eyes()
             return
 
         if face_frame is None:
-            self._clear_eye_labels()
-            return  # No face detected
-
-        # --- Eye Detection ---
-        try:
-            eye_results = process.detect_eyes(face_frame, face_frame_gray, l_pos, r_pos, self.eye_detector)
-            left_eye_frame, right_eye_frame, left_eye_gray, right_eye_gray = eye_results
-        except Exception as e:
-            logging.error(f"Error in eye detection: {e}")
-            self._clear_eye_labels()
+            self._clear_eyes()
             return
-            
-        # --- Process Each Eye ---
-        self._process_eye(left_eye_frame, left_eye_gray, LEFT_EYE_KEY,
-                          self.leftEyeCheckbox, self.leftEyeThreshold)
-        self._process_eye(right_eye_frame, right_eye_gray, RIGHT_EYE_KEY,
-                          self.rightEyeCheckbox, self.rightEyeThreshold)
-        
-        # --- (REMOVED) ---
-        # Removed redundant display call that was here.
-        # The main image is already displayed at the top of this method.
 
-    def _process_eye(self,
-                     eye_frame: Optional[NDArray],
-                     eye_frame_gray: Optional[NDArray],
-                     side: str,
-                     checkbox: QCheckBox,
-                     threshold_slider: QSlider) -> None:
-        """Processes a single eye frame for blob detection and display."""
-        if eye_frame is None or eye_frame_gray is None:
-            self.image_labels[side].clear()
+        try:
+            eyes = process.detect_eyes(face_frame, gray_face, left_region, right_region, self.eye_cascade)
+            left, right, left_g, right_g = eyes
+        except Exception as e:
+            logging.error(f"Eye detection error: {e}")
+            self._clear_eyes()
+            return
+
+        # Process each detected eye
+        self._handle_eye(left, left_g, LEFT_VIEW, self.leftEyeCheckbox, self.leftEyeThreshold)
+        self._handle_eye(right, right_g, RIGHT_VIEW, self.rightEyeCheckbox, self.rightEyeThreshold)
+
+    # ---------------------------------------------------------
+    # Eye Tracking Methods
+    # ---------------------------------------------------------
+    def _handle_eye(
+        self,
+        color_eye: Optional[NDArray],
+        gray_eye: Optional[NDArray],
+        label_key: str,
+        checkbox: QCheckBox,
+        slider: QSlider
+    ) -> None:
+        """Performs blob detection for a specific eye and updates display."""
+        if color_eye is None or gray_eye is None:
+            self.display_boxes[label_key].clear()
             return
 
         if checkbox.isChecked():
-            threshold = threshold_slider.value()
-            self._update_keypoints(eye_frame_gray, side, threshold)
-            
-            keypoints = self.tracking_state[side]['keypoints']
-            if keypoints:
+            threshold_value = slider.value()
+            self._compute_keypoints(gray_eye, label_key, threshold_value)
+
+            kps = self.eye_data[label_key]["keypoints"]
+            if kps is not None:
                 try:
-                    # process.draw_blobs is expected to modify eye_frame in-place
-                    process.draw_blobs(eye_frame, keypoints)
+                    process.draw_blobs(color_eye, kps)
                 except Exception as e:
-                    logging.error(f"Error drawing blobs for {side} eye: {e}")
+                    logging.error(f"Blob drawing failed for {label_key}: {e}")
 
-        self._display_image(eye_frame, side)
+        self._display_frame(color_eye, label_key)
 
-    def _update_keypoints(self, frame_gray: NDArray, side: str, threshold: int) -> None:
-        """Updates the tracking state (keypoints and area) for a given eye."""
-        state = self.tracking_state[side]
+    def _compute_keypoints(self, gray_eye: NDArray, key: str, threshold: int) -> None:
+        """Updates blob keypoints for the given eye view."""
+        state = self.eye_data[key]
         try:
-            keypoints = process.process_eye(
-                frame_gray,
-                threshold,
-                self.blob_detector,
-                prevArea=state.get('area')  # Use .get for safety
-            )
-            
-            if keypoints:
-                state['keypoints'] = keypoints
-                state['area'] = keypoints[0].size
+            keypoints = process.process_eye(gray_eye, threshold, self.blob_detector, prevArea=state.get("area"))
+            if keypoints is not None:
+                state["keypoints"] = keypoints
+                state["area"] = keypoints[0].size
             else:
-                # Explicitly clear if no keypoints are found
-                state['keypoints'] = None
-                # Optionally reset area or keep last known
-                # state['area'] = None 
-        
+                state["keypoints"] = None
         except Exception as e:
-            logging.error(f"Error processing {side} eye: {e}")
-            state['keypoints'] = None
-            state['area'] = None
+            logging.error(f"Keypoint processing failed for {key}: {e}")
+            state["keypoints"], state["area"] = None, None
 
-    def _display_image(self, img: Optional[NDArray], window_key: str) -> None:
-        """
-        Displays an OpenCV image (numpy array) in the specified QLabel.
-        Handles Grayscale, BGR, and BGRA formats.
-        """
-        label = self.image_labels.get(window_key)
-        if label is None:
-            logging.warning(f"Invalid window key '{window_key}' for display.")
+    # ---------------------------------------------------------
+    # Display and Utility
+    # ---------------------------------------------------------
+    def _display_frame(self, frame: Optional[NDArray], target: str) -> None:
+        """Renders a numpy frame into the corresponding QLabel."""
+        box = self.display_boxes.get(target)
+        if not box:
+            logging.warning(f"Invalid display key: {target}")
             return
 
-        if img is None:
-            label.clear()
+        if frame is None:
+            box.clear()
             return
 
         try:
-            # Ensure data is contiguous in memory for QImage
-            if not img.flags['C_CONTIGUOUS']:
-                img = np.ascontiguousarray(img)
+            if not frame.flags["C_CONTIGUOUS"]:
+                frame = np.ascontiguousarray(frame)
 
-            h, w, *channels = img.shape
-            
-            if img.ndim == 2:  # Grayscale
-                bytes_per_line = w
-                q_img = QImage(img.data, w, h, bytes_per_line, QImage.Format_Grayscale8)
-            
-            elif img.ndim == 3:
-                num_channels = channels[0]
-                bytes_per_line = w * num_channels
-                
-                if num_channels == 3:  # BGR
-                    q_img = QImage(img.data, w, h, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
-                elif num_channels == 4:  # BGRA
-                    q_img = QImage(img.data, w, h, bytes_per_line, QImage.Format_ARGB32)
+            h, w = frame.shape[:2]
+
+            if frame.ndim == 2:
+                q_img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
+            elif frame.ndim == 3:
+                ch = frame.shape[2]
+                bytes_per_line = w * ch
+                if ch == 3:
+                    q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
+                elif ch == 4:
+                    q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format_ARGB32)
                 else:
-                    logging.error(f"Unsupported 3D image with {num_channels} channels.")
-                    label.clear()
+                    logging.error(f"Unsupported channel count: {ch}")
                     return
             else:
-                logging.error(f"Unsupported image dimensions: {img.ndim}")
-                label.clear()
+                logging.error(f"Unsupported image shape: {frame.shape}")
                 return
 
-            label.setPixmap(QPixmap.fromImage(q_img))
-            label.setScaledContents(True)
-        
+            box.setPixmap(QPixmap.fromImage(q_img))
+            box.setScaledContents(True)
+
         except Exception as e:
-            logging.error(f"Error during image display for '{window_key}': {e}")
-            label.clear()
+            logging.error(f"Display error ({target}): {e}")
+            box.clear()
 
-    def _clear_eye_labels(self) -> None:
-        """Clears the eye display QLabels."""
-        self.image_labels[LEFT_EYE_KEY].clear()
-        self.image_labels[RIGHT_EYE_KEY].clear()
+    def _clear_eyes(self) -> None:
+        """Clears both left and right eye displays."""
+        self.display_boxes[LEFT_VIEW].clear()
+        self.display_boxes[RIGHT_VIEW].clear()
 
+    # ---------------------------------------------------------
+    # Cleanup
+    # ---------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Handles the window close event."""
-        logging.info("Closing application...")
-        self.stop_webcam()
+        """Ensures camera release on window close."""
+        logging.info("Application closing...")
+        self._stop_camera()
         event.accept()
 
 
 def main() -> None:
-    """Main entry point for the application."""
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(message)s')
-    
+    """Program entry point."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
     app = QApplication(sys.argv)
-    window = EyeTrackerWindow()
-    window.setWindowTitle("Eye Tracker")
-    window.show()
+    tracker = EyeTrackerApp()
+    tracker.setWindowTitle("Eye Tracker System")
+    tracker.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()
