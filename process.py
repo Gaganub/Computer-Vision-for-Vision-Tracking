@@ -3,122 +3,105 @@ import cv2
 import numpy as np
 
 
-def init_cv():
-    """loads all of cv2 tools"""
-    face_detector = cv2.CascadeClassifier(
-        os.path.join("Classifiers", "haar", "haarcascade_frontalface_default.xml"))
-    eye_detector = cv2.CascadeClassifier(os.path.join("Classifiers", "haar", 'haarcascade_eye.xml'))
-    detector_params = cv2.SimpleBlobDetector_Params()
-    detector_params.filterByArea = True
-    detector_params.maxArea = 1500
-    detector = cv2.SimpleBlobDetector_create(detector_params)
- 
-    return face_detector, eye_detector, detector
-
-
-def detect_face(img, img_gray, scascade):
+def setup_detectors():
     """
-    Detects all faces, if multiple found, works with the biggest. Returns the following parameters:
-    1. The face frame
-    2. A gray version of the face frame
-    2. Estimated left eye coordinates range
-    3. Estimated right eye coordinates range
-    5. X of the face frame
-    6. Y of the face frame
+    Initialize all OpenCV detection utilities.
+    Loads Haar cascades for face and eye detection
+    and prepares a blob detector for eye tracking.
     """
-    coords = cascade.detectMultiScale(img, 1.3, 5)
+    face_cascade_path = os.path.join("Classifiers", "haar", "haarcascade_frontalface_default.xml")
+    eye_cascade_path = os.path.join("Classifiers", "haar", "haarcascade_eye.xml")
 
-    if len(coords) > 1:
-        biggest = (0, 0, 0, 0)
-        for i in coords:
-            if i[3] > biggest[3]:
-                biggest = i
-        biggest = np.array([i], np.int32)
-    elif len(coords) == 1:
-        biggest = coords
-    else:
+    face_cascade = cv2.CascadeClassifier(face_cascade_path)
+    eye_cascade = cv2.CascadeClassifier(eye_cascade_path)
+
+    blob_params = cv2.SimpleBlobDetector_Params()
+    blob_params.filterByArea = True
+    blob_params.maxArea = 1500
+    blob_detector = cv2.SimpleBlobDetector_create(blob_params)
+
+    return face_cascade, eye_cascade, blob_detector
+
+
+def find_face(image, gray_image, cascade):
+    """
+    Identify the primary face in the frame.
+    If multiple faces are detected, the largest is selected.
+
+    Returns:
+        face_color (np.ndarray): cropped color frame of the face
+        face_gray (np.ndarray): cropped grayscale frame
+        left_region (tuple): X-range for left eye
+        right_region (tuple): X-range for right eye
+        x, y (int): coordinates of top-left corner of the detected face
+    """
+    detections = cascade.detectMultiScale(image, scaleFactor=1.3, minNeighbors=5)
+    if len(detections) == 0:
         return None, None, None, None, None, None
-    for (x, y, w, h) in biggest:
-        frame = img[y:y + h, x:x + w]
-        frame_gray = img_gray[y:y + h, x:x + w]
-        lest = (int(w * 0.1), int(w * 0.45))
-        rest = (int(w * 0.55), int(w * 0.9))
-        X = x
-        Y = y
 
-    return frame, frame_gray, lest, rest, X, Y
+    # Choose the biggest detected face
+    x, y, w, h = max(detections, key=lambda rect: rect[3])
+    face_color = image[y:y + h, x:x + w]
+    face_gray = gray_image[y:y + h, x:x + w]
+
+    left_region = (int(w * 0.1), int(w * 0.45))
+    right_region = (int(w * 0.55), int(w * 0.9))
+
+    return face_color, face_gray, left_region, right_region, x, y
 
 
-def detect_eyes(img, img_gray, lest, rest, cascade):
+def locate_eyes(frame, gray_frame, left_range, right_range, cascade):
     """
+    Detects left and right eyes from a face frame using Haar cascades.
 
-    :param img: image frame
-    :param img_gray: gray image frame
-    :param lest: left eye estimated position, needed to filter out nostril, know what eye is found
-    :param rest: right eye estimated position
-    :param cascade: Hhaar cascade
-    :return: colored and grayscale versions of eye frames
+    Returns:
+        left_eye, right_eye, left_eye_gray, right_eye_gray
     """
-    leftEye = None
-    rightEye = None
-    leftEyeG = None
-    rightEyeG = None
-    coords = cascade.detectMultiScale(img_gray, 1.3, 5)
+    eyes = cascade.detectMultiScale(gray_frame, 1.3, 5)
+    left_eye = right_eye = left_eye_gray = right_eye_gray = None
 
-    if coords is None or len(coords) == 0:
-        pass
-    else:
-        for (x, y, w, h) in coords:
-            eyecenter = int(float(x) + (float(w) / float(2)))
-            if lest[0] < eyecenter and eyecenter < lest[1]:
-                leftEye = img[y:y + h, x:x + w]
-                leftEyeG = img_gray[y:y + h, x:x + w]
-                leftEye, leftEyeG = cut_eyebrows(leftEye, leftEyeG)
-            elif rest[0] < eyecenter and eyecenter < rest[1]:
-                rightEye = img[y:y + h, x:x + w]
-                rightEyeG = img_gray[y:y + h, x:x + w]
-                rightEye, rightEye = cut_eyebrows(rightEye, rightEyeG)
-            else:
-                pass  # nostril
-    return leftEye, rightEye, leftEyeG, rightEyeG
+    for (x, y, w, h) in eyes:
+        eye_center = int(x + w / 2)
+
+        if left_range[0] <= eye_center <= left_range[1]:
+            left_eye = frame[y:y + h, x:x + w]
+            left_eye_gray = gray_frame[y:y + h, x:x + w]
+            left_eye, left_eye_gray = trim_eyebrows(left_eye, left_eye_gray)
+
+        elif right_range[0] <= eye_center <= right_range[1]:
+            right_eye = frame[y:y + h, x:x + w]
+            right_eye_gray = gray_frame[y:y + h, x:x + w]
+            right_eye, right_eye_gray = trim_eyebrows(right_eye, right_eye_gray)
+
+    return left_eye, right_eye, left_eye_gray, right_eye_gray
 
 
-def process_eye(img, threshold, detector, prevArea=None):
+def refine_eye(img_gray, thresh_value, detector, prev_size=None):
     """
-
-    :param img: eye frame
-    :param threshold: threshold value for threshold function
-    :param detector:  blob detector
-    :param prevArea: area of the previous keypoint(used for filtering)
-    :return: keypoints
+    Process an eye region and detect keypoints (pupil-like blobs).
     """
-    _, img = cv2.threshold(img, threshold, 255, cv2.THRESH_BINARY)
-    img = cv2.erode(img, None, iterations=2)
-    img = cv2.dilate(img, None, iterations=4)
-    img = cv2.medianBlur(img, 5)
-    keypoints = detector.detect(img)
-    if keypoints and prevArea and len(keypoints) > 1:
-        tmp = 1000
-        for keypoint in keypoints:  # filter out odd blobs
-            if abs(keypoint.size - prevArea) < tmp:
-                ans = keypoint
-                tmp = abs(keypoint.size - prevArea)
-        keypoints = np.array(ans)
+    _, thresh = cv2.threshold(img_gray, thresh_value, 255, cv2.THRESH_BINARY)
+    thresh = cv2.erode(thresh, None, iterations=2)
+    thresh = cv2.dilate(thresh, None, iterations=4)
+    thresh = cv2.medianBlur(thresh, 5)
+
+    keypoints = detector.detect(thresh)
+    if not keypoints:
+        return keypoints
+
+    # Optionally filter blobs based on previous frame area
+    if prev_size and len(keypoints) > 1:
+        keypoints = [min(keypoints, key=lambda k: abs(k.size - prev_size))]
 
     return keypoints
 
-def cut_eyebrows(img, imgG):
-    height, width = img.shape[:2]
-    img = img[15:height, 0:width]  # cut eyebrows out (15 px)
-    imgG = imgG[15:height, 0:width]
 
-    return img, imgG
-
-
-def draw_blobs(img, keypoints):
-    """Draws blobs"""
-    cv2.drawKeypoints(img, keypoints, img, (0, 0, 255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+def trim_eyebrows(img_color, img_gray):
+    """Removes upper eyebrow region (15px from top)."""
+    h, w = img_color.shape[:2]
+    return img_color[15:h, 0:w], img_gray[15:h, 0:w]
 
 
-
-
+def render_keypoints(frame, keypoints):
+    """Overlay detected blobs onto the image."""
+    cv2.drawKeypoints(frame, keypoints, frame, (0, 0, 255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
