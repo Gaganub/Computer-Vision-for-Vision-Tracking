@@ -4,21 +4,25 @@ QMainWindow {
 }
 
 QLabel {
-    color: #f0f0f0;
+    /* Change 1: Slightly reduced brightness of the label text color */
+    color: #e0e0e0;
 }
 
 QLabel#leftEyeBox, QLabel#rightEyeBox, QLabel#baseImage {
     border: 2px solid #e6e6e6;
-    border-radius: 4px;
+    /* Change 4: Increased border radius for a slightly rounder look */
+    border-radius: 6px;
 }
 
 QCheckBox {
-    spacing: 8px;
-    color: #f0f0f0;
+    /* Change 2: Increased spacing slightly for better separation */
+    spacing: 10px;
+    color: #e0e0e0; /* Updated to match general QLabel color */
 }
 
 QPushButton {
-    background-color: rgb(76, 175, 80);
+    /* Change 3: Standardized primary color to its hex equivalent */
+    background-color: #4caf50;
     border: 2px solid transparent;
     border-radius: 12px;
     padding: 8px 16px;
