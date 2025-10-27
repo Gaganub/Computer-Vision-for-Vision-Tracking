@@ -1,36 +1,39 @@
 QMainWindow {
     background-color: rgb(28, 28, 35);
-    /* Tweak 1: Slightly lighter gold text */
     color: #ffb84c;
+    /* Tweak 1: Added a very subtle border to the main window */
+    border: 1px solid #1c1c1c;
 }
 
 QLabel {
-    color: #e0e0e0;
+    /* Tweak 2: Reverted label color to the original bright white */
+    color: #f0f0f0;
 }
 
 QLabel#leftEyeBox, QLabel#rightEyeBox, QLabel#baseImage {
-    /* Tweak 2: Slightly darker border for the image boxes */
     border: 2px solid #cccccc;
     border-radius: 6px;
 }
 
 QCheckBox {
     spacing: 10px;
-    color: #e0e0e0;
+    color: #f0f0f0;
+    /* Tweak 3: Added a subtle transparent background to the checkbox area */
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
 QPushButton {
     background-color: #4caf50;
     border: 2px solid transparent;
     border-radius: 12px;
-    /* Tweak 3: Slightly reduced button padding */
     padding: 7px 14px;
     font-weight: bold;
 }
 
 QPushButton:hover {
     background-color: rgb(67, 160, 71);
-    border: 2px solid rgb(129, 199, 132);
+    /* Tweak 4: Slightly darker button hover border color */
+    border: 2px solid rgb(100, 150, 100);
 }
 
 QPushButton:pressed {
@@ -41,6 +44,5 @@ QPushButton:pressed {
 
 QAbstractButton {
     color: rgb(189, 189, 189);
-    /* Tweak 4: Increased abstract button font size */
     font-size: 15px;
 }
