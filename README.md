@@ -20,3 +20,5 @@
 
 ## Note: 
 This repository has undergone several changes and updates, primarily focusing on training models and integrating YOLO and DeepSORT functionality. If you fork or clone this repository, you are advised to have all required frameworks and technologies installed to avoid any issues.
+
+The user guide and the implementation with analysis through LLM will be published in Medium shortly
