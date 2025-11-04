@@ -236,7 +236,7 @@ class EyeTrackerApp(QMainWindow):
                 q_img = QImage(frame.data, w, h, w, QImage.Format_Grayscale8)
             elif frame.ndim == 3:
                 ch = frame.shape[2]
-                bytes_per_line = w * ch
+                bytes_per_line = w * ch 
                 if ch == 3:
                     q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
                 elif ch == 4:
