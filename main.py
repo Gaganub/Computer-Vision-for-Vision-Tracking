@@ -56,9 +56,7 @@ class EyeTrackerApp(QMainWindow):
 
         self._connect_ui_events()
 
-    # ---------------------------------------------------------
-    # Setup and Initialization
-    # ---------------------------------------------------------
+ 
     def _setup_detectors(self) -> None:
         """Load OpenCV classifiers and detectors."""
         try:
